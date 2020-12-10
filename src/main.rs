@@ -1,5 +1,5 @@
-use std::collections::VecDeque;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, BinaryHeap};
+use std::cmp::Ordering;
 use itertools::Itertools;
 
 fn square_dist(a: (isize, isize), b: (isize, isize)) -> usize {
@@ -57,6 +57,38 @@ impl Controller for SimpleController {
     }
 }
 
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
+struct Course {
+    first: Option<u8>,
+    length: usize,
+
+    pos: (isize, isize),
+    dir: u8,
+    target: (isize, isize),
+}
+#[derive(PartialEq, Eq, Debug)]
+struct SortedCoursePair(Course, Course);
+impl SortedCoursePair {
+    fn metric(&self) -> usize {
+        let h1 = self.0.length + diamond_dist(self.0.pos, self.0.target);
+        let h2 = self.1.length + diamond_dist(self.1.pos, self.1.target);
+        h1.max(h2)
+    }
+    fn len(&self) -> usize {
+        self.0.length.max(self.1.length)
+    }
+}
+impl Ord for SortedCoursePair {
+    fn cmp(&self, other: &Self) -> Ordering {
+        (other.metric(), other.len()).cmp(&(self.metric(), self.len()))
+    }
+}
+impl PartialOrd for SortedCoursePair {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 pub struct CompleteController;
 impl CompleteController {
     fn plot_path(a: &Info, b: &Info) -> (u8, u8) {
@@ -65,49 +97,63 @@ impl CompleteController {
             let r = Self::plot_path(b, a);
             return (r.1, r.0);
         }
-        type Course = (Option<u8>, (isize, isize), u8);
-        let mut queue: VecDeque<(Course, Course)> = VecDeque::with_capacity(1024);
-        let mut visited: BTreeSet<(Course, Course)> = Default::default();
-        queue.push_back(((None, a.pos, a.dir), (None, b.pos, b.dir)));
-        while let Some(old) = queue.pop_front() {
-            assert!(visited.insert(old));
-            let ((a_first, a_pos, a_dir), (b_first, b_pos, b_dir)) = old;
-            if a_pos != a.target && b_pos != b.target {
+
+        let mut heap: BinaryHeap<SortedCoursePair> = BinaryHeap::with_capacity(1024);
+        let mut heap_set: BTreeSet<(Course, Course)> = Default::default();
+        let mut visited_set: BTreeSet<(Course, Course)> = Default::default();
+        macro_rules! heap_insert {
+            ($a:expr, $b:expr $(,)?) => {{
+                let v = ($a, $b);
+                if !visited_set.contains(&v) && heap_set.insert(v) {
+                    heap.push(SortedCoursePair(v.0, v.1))
+                }
+            }}
+        }
+
+        heap_insert!(
+            Course { first: None, length: 0, pos: a.pos, dir: a.dir, target: a.target },
+            Course { first: None, length: 0, pos: b.pos, dir: b.dir, target: b.target },
+        );
+        while let Some(SortedCoursePair(a, b)) = heap.pop() {
+            assert!(heap_set.remove(&(a, b))); // take it out of the heap set and put it in the visited set
+            assert!(visited_set.insert((a, b)));
+
+            if a.pos != a.target && b.pos != b.target {
                 for &da in &[0, 1, 3] {
                     for &db in &[0, 1, 3] {
-                        let new_a_dir = (a_dir + da) % 4;
-                        let new_b_dir = (b_dir + db) % 4;
-                        if will_collide((a_pos, new_a_dir), (b_pos, new_b_dir)) { continue }
-                        let new_a_pos = step(a_pos, new_a_dir);
-                        let new_b_pos = step(b_pos, new_b_dir);
-                        if new_a_pos == a.target && new_b_pos == b.target { return (a_first.unwrap_or(da), b_first.unwrap_or(db)); }
+                        let new_a_dir = (a.dir + da) % 4;
+                        let new_b_dir = (b.dir + db) % 4;
+                        if will_collide((a.pos, new_a_dir), (b.pos, new_b_dir)) { continue }
+                        let new_a_pos = step(a.pos, new_a_dir);
+                        let new_b_pos = step(b.pos, new_b_dir);
+                        if new_a_pos == a.target && new_b_pos == b.target { return (a.first.unwrap_or(da), b.first.unwrap_or(db)); }
 
-                        let new = ((a_first.or(Some(da)), new_a_pos, new_a_dir), (b_first.or(Some(db)), new_b_pos, new_b_dir));
-                        if !visited.contains(&new) && !queue.contains(&new) { queue.push_back(new) }
+                        heap_insert!(
+                            Course { first: a.first.or(Some(da)), length: a.length + 1, pos: new_a_pos, dir: new_a_dir, target: a.target },
+                            Course { first: b.first.or(Some(db)), length: b.length + 1, pos: new_b_pos, dir: new_b_dir, target: b.target },
+                        );
                     }
                 }
             }
-            else if a_pos != a.target {
+            else if a.pos != a.target {
                 for &d in &[0, 1, 3] {
-                    let new_dir = (a_dir + d) % 4;
-                    let new_pos = step(a_pos, new_dir);
-                    if new_pos == a.target { return (a_first.unwrap(), b_first.unwrap()); }
+                    let new_dir = (a.dir + d) % 4;
+                    let new_pos = step(a.pos, new_dir);
+                    if new_pos == a.target { return (a.first.unwrap(), b.first.unwrap()); }
 
-                    let new = ((a_first, new_pos, new_dir), (b_first, b_pos, b_dir));
-                    if !visited.contains(&new) && !queue.contains(&new) { queue.push_back(new) }
+                    heap_insert!(Course { first: a.first, length: a.length + 1, pos: new_pos, dir: new_dir, target: a.target }, b);
                 }
             }
-            else if b_pos != b.target {
+            else if b.pos != b.target {
                 for &d in &[0, 1, 3] {
-                    let new_dir = (b_dir + d) % 4;
-                    let new_pos = step(b_pos, new_dir);
-                    if new_pos == b.target { return (a_first.unwrap(), b_first.unwrap()); }
+                    let new_dir = (b.dir + d) % 4;
+                    let new_pos = step(b.pos, new_dir);
+                    if new_pos == b.target { return (a.first.unwrap(), b.first.unwrap()); }
 
-                    let new = ((a_first, a_pos, a_dir), (b_first, new_pos, new_dir));
-                    if !visited.contains(&new) && !queue.contains(&new) { queue.push_back(new) }
+                    heap_insert!(a, Course { first: b.first, length: b.length + 1, pos: new_pos, dir: new_dir, target: b.target });
                 }
             }
-            else { panic!("this should be impossible"); }
+            else { unreachable!(); }
         }
         panic!("this should be impossible");
     }
