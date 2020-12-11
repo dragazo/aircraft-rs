@@ -86,7 +86,11 @@ impl SortedCoursePair {
 }
 impl Ord for SortedCoursePair {
     fn cmp(&self, other: &Self) -> Ordering {
-        (other.metric(), other.len()).cmp(&(self.metric(), self.len()))
+        // BinaryHeap is a max heap - we want lowest metric and highest length, so invert metric and leave len the same
+        match other.metric().cmp(&self.metric()) {
+            Ordering::Equal => self.len().cmp(&other.len()),
+            x => x,
+        }
     }
 }
 impl PartialOrd for SortedCoursePair {
