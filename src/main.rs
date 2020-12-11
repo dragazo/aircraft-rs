@@ -72,10 +72,18 @@ impl Course {
 #[derive(PartialEq, Eq, Debug)]
 struct SortedCoursePair(Course, Course);
 impl SortedCoursePair {
-    fn metric(&self) -> usize {
+    fn metrics(&self) -> (usize, usize) {
         let h1 = self.0.path.len() + diamond_dist(self.0.pos, self.0.target);
         let h2 = self.1.path.len() + diamond_dist(self.1.pos, self.1.target);
+        (h1, h2)
+    }
+    fn long_metric(&self) -> usize {
+        let (h1, h2) = self.metrics();
         h1.max(h2)
+    }
+    fn short_metric(&self) -> usize {
+        let (h1, h2) = self.metrics();
+        h1.min(h2)
     }
     fn len(&self) -> usize {
         self.0.path.len().max(self.1.path.len())
@@ -87,8 +95,11 @@ impl SortedCoursePair {
 impl Ord for SortedCoursePair {
     fn cmp(&self, other: &Self) -> Ordering {
         // BinaryHeap is a max heap - we want lowest metric and highest length, so invert metric and leave len the same
-        match other.metric().cmp(&self.metric()) {
-            Ordering::Equal => self.len().cmp(&other.len()),
+        match other.long_metric().cmp(&self.long_metric()) { // shortest overal time (both aircraft)
+            Ordering::Equal => match other.short_metric().cmp(&self.short_metric()) { // shortest individual time (tie breaker)
+                Ordering::Equal => self.len().cmp(&other.len()), // whichever path is closest to being completed
+                x => x,
+            }
             x => x,
         }
     }
