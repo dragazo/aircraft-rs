@@ -11,7 +11,6 @@ fn diamond_dist(a: (isize, isize), b: (isize, isize)) -> usize {
 }
 
 const BROADCAST_RANGE: usize = 2;
-const DEFAULT_SIM_TIME: usize = 1000;
 
 fn step(pos: (isize, isize), dir: u8) -> (isize, isize) {
     match dir {
@@ -296,7 +295,7 @@ where F: FnMut(u64, Vec<Info>)
 fn test_simple() {
     for_scenarios(8, 1, |i, scenario| {
         let mut sim = Simulator::<SimpleController>::from_scenario(&scenario);
-        match sim.tick(DEFAULT_SIM_TIME) {
+        match sim.tick(1000) {
             SimulationResult::Completed => (),
             SimulationResult::Collision => panic!("sim {} ({:?}) had a collision", i, scenario),
             SimulationResult::Running => panic!("sim {} ({:?}) incomplete", i, scenario),
@@ -304,11 +303,11 @@ fn test_simple() {
     });
 }
 
-fn independent_time(scenario: &[Info]) -> usize {
+fn independent_time(scenario: &[Info], max_rounds: usize) -> usize {
     let mut max = 0;
     for single in scenario.windows(1) {
         let mut sim = Simulator::<SimpleController>::from_scenario(single);
-        match sim.tick(DEFAULT_SIM_TIME) {
+        match sim.tick(max_rounds) {
             SimulationResult::Completed => max = max.max(sim.get_time()),
             _ => panic!(),
         }
@@ -374,7 +373,7 @@ fn main() {
                     }
                     if ok {
                         println!("{} rounds", sim.get_time());
-                        println!("{} delay rounds", sim.get_time() - independent_time(&scenario));
+                        println!("{} delay rounds", sim.get_time() - independent_time(&scenario, max_rounds));
                     }
                 }
                 "complete" => {
@@ -385,7 +384,7 @@ fn main() {
                     }
                     if ok {
                         println!("{} rounds", sim.get_time());
-                        println!("{} delay rounds", sim.get_time() - independent_time(&scenario));
+                        println!("{} delay rounds", sim.get_time() - independent_time(&scenario, max_rounds));
                     }
                 }
                 x => crash!("unrecognized controller type: '{}'", x),
@@ -395,6 +394,7 @@ fn main() {
             if args.len() != 4 { crash!("usage: {} full n k\n    n - size of grid (n x n)\n    k - number of aircraft", args[0]); }
             let n = parse_int(&args[2]);
             let k = parse_int(&args[3]);
+            let max_rounds = 1000;
 
             let mut count = 0u64;
             let mut non_trivial_count = 0u64;
@@ -402,10 +402,10 @@ fn main() {
             let mut max_delay_rounds = 0u64;
             for_scenarios(n, k, |i, scenario| {
                 let mut sim = Simulator::<CompleteController>::from_scenario(&scenario);
-                match sim.tick(DEFAULT_SIM_TIME) {
+                match sim.tick(max_rounds) {
                     SimulationResult::Completed => {
-                        let d = (sim.get_time() - independent_time(&scenario)) as u64;
-                        let trivial = Simulator::<SimpleController>::from_scenario(&scenario).tick(DEFAULT_SIM_TIME) == SimulationResult::Completed;
+                        let d = (sim.get_time() - independent_time(&scenario, max_rounds)) as u64;
+                        let trivial = Simulator::<SimpleController>::from_scenario(&scenario).tick(max_rounds) == SimulationResult::Completed;
                         if trivial { assert_eq!(d, 0); } else { non_trivial_count += 1; }
                         count += 1;
                         delay_rounds += d;
